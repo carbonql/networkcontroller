@@ -16,7 +16,7 @@ do this yourself using the `./hack/update-codegen.sh` script.
 The `update-codegen` script will automatically generate the following files &
 directories:
 
-* `pkg/apis/samplecontroller/v1alpha1/zz_generated.deepcopy.go`
+* `pkg/apis/networkcontroller/v1alpha1/zz_generated.deepcopy.go`
 * `pkg/client/`
 
 Changes should not be made to these files manually, and when creating your own
@@ -122,7 +122,7 @@ $ kubectl create -f artifacts/examples/crd-status-subresource.yaml
 
 You can clean up the created CustomResourceDefinition with:
 
-    $ kubectl delete crd foos.samplecontroller.k8s.io
+    $ kubectl delete crd asserts.networkcontroller.carbonql.com
 
 ## Compatibility
 

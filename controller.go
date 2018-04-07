@@ -37,14 +37,14 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 
-	samplev1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/samplecontroller/v1alpha1"
+	networkv1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/networkcontroller/v1alpha1"
 	clientset "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned"
-	samplescheme "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/scheme"
+	networkscheme "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/scheme"
 	informers "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions"
-	listers "github.com/carbonql/networkcontroller/pkg/client/listers/samplecontroller/v1alpha1"
+	listers "github.com/carbonql/networkcontroller/pkg/client/listers/networkcontroller/v1alpha1"
 )
 
-const controllerAgentName = "sample-controller"
+const controllerAgentName = "network-controller"
 
 const (
 	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
@@ -55,23 +55,23 @@ const (
 
 	// MessageResourceExists is the message used for Events when a resource
 	// fails to sync due to a Deployment already existing
-	MessageResourceExists = "Resource %q already exists and is not managed by Foo"
+	MessageResourceExists = "Resource %q already exists and is not managed by Assert"
 	// MessageResourceSynced is the message used for an Event fired when a Foo
 	// is synced successfully
-	MessageResourceSynced = "Foo synced successfully"
+	MessageResourceSynced = "Assert synced successfully"
 )
 
 // Controller is the controller implementation for Foo resources
 type Controller struct {
 	// kubeclientset is a standard kubernetes clientset
 	kubeclientset kubernetes.Interface
-	// sampleclientset is a clientset for our own API group
-	sampleclientset clientset.Interface
+	// networkclientset is a clientset for our own API group
+	networkclientset clientset.Interface
 
 	deploymentsLister appslisters.DeploymentLister
 	deploymentsSynced cache.InformerSynced
-	foosLister        listers.FooLister
-	foosSynced        cache.InformerSynced
+	assertsLister     listers.AssertLister
+	assertsSynced     cache.InformerSynced
 
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
@@ -84,22 +84,22 @@ type Controller struct {
 	recorder record.EventRecorder
 }
 
-// NewController returns a new sample controller
+// NewController returns a new network controller
 func NewController(
 	kubeclientset kubernetes.Interface,
-	sampleclientset clientset.Interface,
+	networkclientset clientset.Interface,
 	kubeInformerFactory kubeinformers.SharedInformerFactory,
-	sampleInformerFactory informers.SharedInformerFactory) *Controller {
+	networkInformerFactory informers.SharedInformerFactory) *Controller {
 
 	// obtain references to shared index informers for the Deployment and Foo
 	// types.
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
-	fooInformer := sampleInformerFactory.Samplecontroller().V1alpha1().Foos()
+	assertInformer := networkInformerFactory.Networkcontroller().V1alpha1().Asserts()
 
 	// Create event broadcaster
-	// Add sample-controller types to the default Kubernetes Scheme so Events can be
-	// logged for sample-controller types.
-	samplescheme.AddToScheme(scheme.Scheme)
+	// Add network-controller types to the default Kubernetes Scheme so Events can be
+	// logged for network-controller types.
+	networkscheme.AddToScheme(scheme.Scheme)
 	glog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
@@ -108,21 +108,21 @@ func NewController(
 
 	controller := &Controller{
 		kubeclientset:     kubeclientset,
-		sampleclientset:   sampleclientset,
+		networkclientset:  networkclientset,
 		deploymentsLister: deploymentInformer.Lister(),
 		deploymentsSynced: deploymentInformer.Informer().HasSynced,
-		foosLister:        fooInformer.Lister(),
-		foosSynced:        fooInformer.Informer().HasSynced,
-		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Foos"),
+		assertsLister:     assertInformer.Lister(),
+		assertsSynced:     assertInformer.Informer().HasSynced,
+		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Asserts"),
 		recorder:          recorder,
 	}
 
 	glog.Info("Setting up event handlers")
 	// Set up an event handler for when Foo resources change
-	fooInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueFoo,
+	assertInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueAssert,
 		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueFoo(new)
+			controller.enqueueAssert(new)
 		},
 	})
 	// Set up an event handler for when Deployment resources change. This
@@ -158,11 +158,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	glog.Info("Starting Foo controller")
+	glog.Info("Starting Assert controller")
 
 	// Wait for the caches to be synced before starting workers
 	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.foosSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.assertsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -252,19 +252,19 @@ func (c *Controller) syncHandler(key string) error {
 	}
 
 	// Get the Foo resource with this namespace/name
-	foo, err := c.foosLister.Foos(namespace).Get(name)
+	assert, err := c.assertsLister.Asserts(namespace).Get(name)
 	if err != nil {
 		// The Foo resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("foo '%s' in work queue no longer exists", key))
+			runtime.HandleError(fmt.Errorf("assert '%s' in work queue no longer exists", key))
 			return nil
 		}
 
 		return err
 	}
 
-	deploymentName := foo.Spec.DeploymentName
+	deploymentName := assert.Spec.DeploymentName
 	if deploymentName == "" {
 		// We choose to absorb the error here as the worker would requeue the
 		// resource otherwise. Instead, the next time the resource is updated
@@ -274,10 +274,10 @@ func (c *Controller) syncHandler(key string) error {
 	}
 
 	// Get the deployment with the name specified in Foo.spec
-	deployment, err := c.deploymentsLister.Deployments(foo.Namespace).Get(deploymentName)
+	deployment, err := c.deploymentsLister.Deployments(assert.Namespace).Get(deploymentName)
 	// If the resource doesn't exist, we'll create it
 	if errors.IsNotFound(err) {
-		deployment, err = c.kubeclientset.AppsV1().Deployments(foo.Namespace).Create(newDeployment(foo))
+		deployment, err = c.kubeclientset.AppsV1().Deployments(assert.Namespace).Create(newDeployment(assert))
 	}
 
 	// If an error occurs during Get/Create, we'll requeue the item so we can
@@ -289,18 +289,18 @@ func (c *Controller) syncHandler(key string) error {
 
 	// If the Deployment is not controlled by this Foo resource, we should log
 	// a warning to the event recorder and ret
-	if !metav1.IsControlledBy(deployment, foo) {
+	if !metav1.IsControlledBy(deployment, assert) {
 		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
-		c.recorder.Event(foo, corev1.EventTypeWarning, ErrResourceExists, msg)
+		c.recorder.Event(assert, corev1.EventTypeWarning, ErrResourceExists, msg)
 		return fmt.Errorf(msg)
 	}
 
 	// If this number of the replicas on the Foo resource is specified, and the
 	// number does not equal the current desired replicas on the Deployment, we
 	// should update the Deployment resource.
-	if foo.Spec.Replicas != nil && *foo.Spec.Replicas != *deployment.Spec.Replicas {
-		glog.V(4).Infof("Foo %s replicas: %d, deployment replicas: %d", name, *foo.Spec.Replicas, *deployment.Spec.Replicas)
-		deployment, err = c.kubeclientset.AppsV1().Deployments(foo.Namespace).Update(newDeployment(foo))
+	if assert.Spec.Replicas != nil && *assert.Spec.Replicas != *deployment.Spec.Replicas {
+		glog.V(4).Infof("Assert %s replicas: %d, deployment replicas: %d", name, *assert.Spec.Replicas, *deployment.Spec.Replicas)
+		deployment, err = c.kubeclientset.AppsV1().Deployments(assert.Namespace).Update(newDeployment(assert))
 	}
 
 	// If an error occurs during Update, we'll requeue the item so we can
@@ -312,33 +312,33 @@ func (c *Controller) syncHandler(key string) error {
 
 	// Finally, we update the status block of the Foo resource to reflect the
 	// current state of the world
-	err = c.updateFooStatus(foo, deployment)
+	err = c.updateAssertStatus(assert, deployment)
 	if err != nil {
 		return err
 	}
 
-	c.recorder.Event(foo, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(assert, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
-func (c *Controller) updateFooStatus(foo *samplev1alpha1.Foo, deployment *appsv1.Deployment) error {
+func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert, deployment *appsv1.Deployment) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
-	fooCopy := foo.DeepCopy()
-	fooCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+	assertCopy := assert.DeepCopy()
+	assertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
 	// If the CustomResourceSubresources feature gate is not enabled,
 	// we must use Update instead of UpdateStatus to update the Status block of the Foo resource.
 	// UpdateStatus will not allow changes to the Spec of the resource,
 	// which is ideal for ensuring nothing other than resource status has been updated.
-	_, err := c.sampleclientset.SamplecontrollerV1alpha1().Foos(foo.Namespace).Update(fooCopy)
+	_, err := c.networkclientset.NetworkcontrollerV1alpha1().Asserts(assert.Namespace).Update(assertCopy)
 	return err
 }
 
 // enqueueFoo takes a Foo resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than Foo.
-func (c *Controller) enqueueFoo(obj interface{}) {
+func (c *Controller) enqueueAssert(obj interface{}) {
 	var key string
 	var err error
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
@@ -373,17 +373,17 @@ func (c *Controller) handleObject(obj interface{}) {
 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
 		// If this object is not owned by a Foo, we should not do anything more
 		// with it.
-		if ownerRef.Kind != "Foo" {
+		if ownerRef.Kind != "Assert" {
 			return
 		}
 
-		foo, err := c.foosLister.Foos(object.GetNamespace()).Get(ownerRef.Name)
+		assert, err := c.assertsLister.Asserts(object.GetNamespace()).Get(ownerRef.Name)
 		if err != nil {
-			glog.V(4).Infof("ignoring orphaned object '%s' of foo '%s'", object.GetSelfLink(), ownerRef.Name)
+			glog.V(4).Infof("ignoring orphaned object '%s' of assert '%s'", object.GetSelfLink(), ownerRef.Name)
 			return
 		}
 
-		c.enqueueFoo(foo)
+		c.enqueueAssert(assert)
 		return
 	}
 }
@@ -391,25 +391,25 @@ func (c *Controller) handleObject(obj interface{}) {
 // newDeployment creates a new Deployment for a Foo resource. It also sets
 // the appropriate OwnerReferences on the resource so handleObject can discover
 // the Foo resource that 'owns' it.
-func newDeployment(foo *samplev1alpha1.Foo) *appsv1.Deployment {
+func newDeployment(assert *networkv1alpha1.Assert) *appsv1.Deployment {
 	labels := map[string]string{
 		"app":        "nginx",
-		"controller": foo.Name,
+		"controller": assert.Name,
 	}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      foo.Spec.DeploymentName,
-			Namespace: foo.Namespace,
+			Name:      assert.Spec.DeploymentName,
+			Namespace: assert.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(foo, schema.GroupVersionKind{
-					Group:   samplev1alpha1.SchemeGroupVersion.Group,
-					Version: samplev1alpha1.SchemeGroupVersion.Version,
-					Kind:    "Foo",
+				*metav1.NewControllerRef(assert, schema.GroupVersionKind{
+					Group:   networkv1alpha1.SchemeGroupVersion.Group,
+					Version: networkv1alpha1.SchemeGroupVersion.Version,
+					Kind:    "Assert",
 				}),
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: foo.Spec.Replicas,
+			Replicas: assert.Spec.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},

@@ -21,7 +21,7 @@ package externalversions
 import (
 	"fmt"
 
-	v1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/samplecontroller/v1alpha1"
+	v1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/networkcontroller/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -52,9 +52,9 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=samplecontroller.k8s.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("foos"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Samplecontroller().V1alpha1().Foos().Informer()}, nil
+	// Group=networkcontroller.carbonql.com, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("asserts"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Networkcontroller().V1alpha1().Asserts().Informer()}, nil
 
 	}
 

@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned"
-	samplecontrollerv1alpha1 "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/typed/samplecontroller/v1alpha1"
-	fakesamplecontrollerv1alpha1 "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/typed/samplecontroller/v1alpha1/fake"
+	networkcontrollerv1alpha1 "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/typed/networkcontroller/v1alpha1"
+	fakenetworkcontrollerv1alpha1 "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/typed/networkcontroller/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -70,12 +70,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// SamplecontrollerV1alpha1 retrieves the SamplecontrollerV1alpha1Client
-func (c *Clientset) SamplecontrollerV1alpha1() samplecontrollerv1alpha1.SamplecontrollerV1alpha1Interface {
-	return &fakesamplecontrollerv1alpha1.FakeSamplecontrollerV1alpha1{Fake: &c.Fake}
+// NetworkcontrollerV1alpha1 retrieves the NetworkcontrollerV1alpha1Client
+func (c *Clientset) NetworkcontrollerV1alpha1() networkcontrollerv1alpha1.NetworkcontrollerV1alpha1Interface {
+	return &fakenetworkcontrollerv1alpha1.FakeNetworkcontrollerV1alpha1{Fake: &c.Fake}
 }
 
-// Samplecontroller retrieves the SamplecontrollerV1alpha1Client
-func (c *Clientset) Samplecontroller() samplecontrollerv1alpha1.SamplecontrollerV1alpha1Interface {
-	return &fakesamplecontrollerv1alpha1.FakeSamplecontrollerV1alpha1{Fake: &c.Fake}
+// Networkcontroller retrieves the NetworkcontrollerV1alpha1Client
+func (c *Clientset) Networkcontroller() networkcontrollerv1alpha1.NetworkcontrollerV1alpha1Interface {
+	return &fakenetworkcontrollerv1alpha1.FakeNetworkcontrollerV1alpha1{Fake: &c.Fake}
 }

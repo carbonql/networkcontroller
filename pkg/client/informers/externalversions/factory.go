@@ -25,7 +25,7 @@ import (
 
 	versioned "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions/internalinterfaces"
-	samplecontroller "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions/samplecontroller"
+	networkcontroller "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions/networkcontroller"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -172,9 +172,9 @@ type SharedInformerFactory interface {
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
-	Samplecontroller() samplecontroller.Interface
+	Networkcontroller() networkcontroller.Interface
 }
 
-func (f *sharedInformerFactory) Samplecontroller() samplecontroller.Interface {
-	return samplecontroller.New(f, f.namespace, f.tweakListOptions)
+func (f *sharedInformerFactory) Networkcontroller() networkcontroller.Interface {
+	return networkcontroller.New(f, f.namespace, f.tweakListOptions)
 }

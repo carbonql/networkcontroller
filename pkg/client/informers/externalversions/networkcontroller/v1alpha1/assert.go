@@ -21,69 +21,69 @@ package v1alpha1
 import (
 	time "time"
 
-	samplecontroller_v1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/samplecontroller/v1alpha1"
+	networkcontroller_v1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/networkcontroller/v1alpha1"
 	versioned "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/carbonql/networkcontroller/pkg/client/listers/samplecontroller/v1alpha1"
+	v1alpha1 "github.com/carbonql/networkcontroller/pkg/client/listers/networkcontroller/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// FooInformer provides access to a shared informer and lister for
-// Foos.
-type FooInformer interface {
+// AssertInformer provides access to a shared informer and lister for
+// Asserts.
+type AssertInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.FooLister
+	Lister() v1alpha1.AssertLister
 }
 
-type fooInformer struct {
+type assertInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 	namespace        string
 }
 
-// NewFooInformer constructs a new informer for Foo type.
+// NewAssertInformer constructs a new informer for Assert type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFooInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredFooInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredAssertInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredFooInformer constructs a new informer for Foo type.
+// NewFilteredAssertInformer constructs a new informer for Assert type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredFooInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SamplecontrollerV1alpha1().Foos(namespace).List(options)
+				return client.NetworkcontrollerV1alpha1().Asserts(namespace).List(options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SamplecontrollerV1alpha1().Foos(namespace).Watch(options)
+				return client.NetworkcontrollerV1alpha1().Asserts(namespace).Watch(options)
 			},
 		},
-		&samplecontroller_v1alpha1.Foo{},
+		&networkcontroller_v1alpha1.Assert{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *fooInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredFooInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *assertInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredAssertInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *fooInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&samplecontroller_v1alpha1.Foo{}, f.defaultInformer)
+func (f *assertInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&networkcontroller_v1alpha1.Assert{}, f.defaultInformer)
 }
 
-func (f *fooInformer) Lister() v1alpha1.FooLister {
-	return v1alpha1.NewFooLister(f.Informer().GetIndexer())
+func (f *assertInformer) Lister() v1alpha1.AssertLister {
+	return v1alpha1.NewAssertLister(f.Informer().GetIndexer())
 }
