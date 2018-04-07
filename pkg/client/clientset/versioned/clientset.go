@@ -19,11 +19,11 @@ limitations under the License.
 package versioned
 
 import (
+	samplecontrollerv1alpha1 "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned/typed/samplecontroller/v1alpha1"
 	glog "github.com/golang/glog"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	samplecontrollerv1alpha1 "k8s.io/sample-controller/pkg/client/clientset/versioned/typed/samplecontroller/v1alpha1"
 )
 
 type Interface interface {
