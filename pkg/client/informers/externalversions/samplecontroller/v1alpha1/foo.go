@@ -21,14 +21,14 @@ package v1alpha1
 import (
 	time "time"
 
+	samplecontroller_v1alpha1 "github.com/carbonql/networkcontroller/pkg/apis/samplecontroller/v1alpha1"
+	versioned "github.com/carbonql/networkcontroller/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/carbonql/networkcontroller/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/carbonql/networkcontroller/pkg/client/listers/samplecontroller/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
-	samplecontroller_v1alpha1 "k8s.io/sample-controller/pkg/apis/samplecontroller/v1alpha1"
-	versioned "k8s.io/sample-controller/pkg/client/clientset/versioned"
-	internalinterfaces "k8s.io/sample-controller/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "k8s.io/sample-controller/pkg/client/listers/samplecontroller/v1alpha1"
 )
 
 // FooInformer provides access to a shared informer and lister for
