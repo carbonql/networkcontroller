@@ -18,6 +18,9 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -25,7 +28,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeinformers "k8s.io/client-go/informers"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	appslisters "k8s.io/client-go/listers/apps/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
@@ -72,6 +75,13 @@ type Controller struct {
 	deploymentsSynced cache.InformerSynced
 	assertsLister     listers.AssertLister
 	assertsSynced     cache.InformerSynced
+	servicesLister    corelisters.ServiceLister
+	servicesSynced    cache.InformerSynced
+
+	assertLock sync.RWMutex
+	asserts    map[string]bool
+
+	serviceHosts serviceSet
 
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
@@ -95,6 +105,7 @@ func NewController(
 	// types.
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
 	assertInformer := networkInformerFactory.Networkcontroller().V1alpha1().Asserts()
+	serviceInformer := kubeInformerFactory.Core().V1().Services()
 
 	// Create event broadcaster
 	// Add network-controller types to the default Kubernetes Scheme so Events can be
@@ -113,16 +124,42 @@ func NewController(
 		deploymentsSynced: deploymentInformer.Informer().HasSynced,
 		assertsLister:     assertInformer.Lister(),
 		assertsSynced:     assertInformer.Informer().HasSynced,
-		workqueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Asserts"),
-		recorder:          recorder,
+		servicesLister:    serviceInformer.Lister(),
+		servicesSynced:    serviceInformer.Informer().HasSynced,
+		assertLock:        sync.RWMutex{},
+		asserts:           map[string]bool{},
+		serviceHosts: serviceSet{
+			hosts: map[string]*networkv1alpha1.DNSEntry{},
+		},
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Asserts"),
+		recorder:  recorder,
 	}
 
 	glog.Info("Setting up event handlers")
 	// Set up an event handler for when Foo resources change
 	assertInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueAssert,
+		AddFunc: func(obj interface{}) {
+			controller.enqueueAssert(obj)
+			key := makeKey(obj)
+
+			controller.assertLock.Lock()
+			defer controller.assertLock.Unlock()
+
+			if _, exists := controller.asserts[key]; !exists {
+				controller.asserts[key] = true
+			}
+			controller.asserts[key] = true
+		},
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueAssert(new)
+		},
+		DeleteFunc: func(obj interface{}) {
+			key := makeKey(obj)
+
+			controller.assertLock.Lock()
+			defer controller.assertLock.Unlock()
+
+			delete(controller.asserts, key)
 		},
 	})
 	// Set up an event handler for when Deployment resources change. This
@@ -144,6 +181,12 @@ func NewController(
 			controller.handleObject(new)
 		},
 		DeleteFunc: controller.handleObject,
+	})
+
+	// TODO: Add stuff for the `serviceInformer.Informer()`.
+	serviceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.addServiceHosts,
+		DeleteFunc: controller.deleteServiceHosts,
 	})
 
 	return controller
@@ -264,55 +307,9 @@ func (c *Controller) syncHandler(key string) error {
 		return err
 	}
 
-	deploymentName := assert.Spec.DeploymentName
-	if deploymentName == "" {
-		// We choose to absorb the error here as the worker would requeue the
-		// resource otherwise. Instead, the next time the resource is updated
-		// the resource will be queued again.
-		runtime.HandleError(fmt.Errorf("%s: deployment name must be specified", key))
-		return nil
-	}
-
-	// Get the deployment with the name specified in Foo.spec
-	deployment, err := c.deploymentsLister.Deployments(assert.Namespace).Get(deploymentName)
-	// If the resource doesn't exist, we'll create it
-	if errors.IsNotFound(err) {
-		deployment, err = c.kubeclientset.AppsV1().Deployments(assert.Namespace).Create(newDeployment(assert))
-	}
-
-	// If an error occurs during Get/Create, we'll requeue the item so we can
-	// attempt processing again later. This could have been caused by a
-	// temporary network failure, or any other transient reason.
-	if err != nil {
-		return err
-	}
-
-	// If the Deployment is not controlled by this Foo resource, we should log
-	// a warning to the event recorder and ret
-	if !metav1.IsControlledBy(deployment, assert) {
-		msg := fmt.Sprintf(MessageResourceExists, deployment.Name)
-		c.recorder.Event(assert, corev1.EventTypeWarning, ErrResourceExists, msg)
-		return fmt.Errorf(msg)
-	}
-
-	// If this number of the replicas on the Foo resource is specified, and the
-	// number does not equal the current desired replicas on the Deployment, we
-	// should update the Deployment resource.
-	if assert.Spec.Replicas != nil && *assert.Spec.Replicas != *deployment.Spec.Replicas {
-		glog.V(4).Infof("Assert %s replicas: %d, deployment replicas: %d", name, *assert.Spec.Replicas, *deployment.Spec.Replicas)
-		deployment, err = c.kubeclientset.AppsV1().Deployments(assert.Namespace).Update(newDeployment(assert))
-	}
-
-	// If an error occurs during Update, we'll requeue the item so we can
-	// attempt processing again later. THis could have been caused by a
-	// temporary network failure, or any other transient reason.
-	if err != nil {
-		return err
-	}
-
 	// Finally, we update the status block of the Foo resource to reflect the
 	// current state of the world
-	err = c.updateAssertStatus(assert, deployment)
+	err = c.updateAssertStatus(assert /*, deployment*/)
 	if err != nil {
 		return err
 	}
@@ -321,17 +318,33 @@ func (c *Controller) syncHandler(key string) error {
 	return nil
 }
 
-func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert, deployment *appsv1.Deployment) error {
+func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	assertCopy := assert.DeepCopy()
-	assertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+	// assertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+
+	assert.Status.DNSEntries = []*networkv1alpha1.DNSEntry{}
+	var err error
+	func() {
+		c.serviceHosts.RLock()
+		defer c.serviceHosts.RUnlock()
+
+		for _, dnsEntry := range c.serviceHosts.hosts {
+			entryCopy := dnsEntry.DeepCopy()
+			assert.Status.DNSEntries = append(assert.Status.DNSEntries, entryCopy)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
 	// If the CustomResourceSubresources feature gate is not enabled,
 	// we must use Update instead of UpdateStatus to update the Status block of the Foo resource.
 	// UpdateStatus will not allow changes to the Spec of the resource,
 	// which is ideal for ensuring nothing other than resource status has been updated.
-	_, err := c.networkclientset.NetworkcontrollerV1alpha1().Asserts(assert.Namespace).Update(assertCopy)
+	_, err = c.networkclientset.NetworkcontrollerV1alpha1().Asserts(assert.Namespace).Update(assertCopy)
 	return err
 }
 
@@ -388,44 +401,59 @@ func (c *Controller) handleObject(obj interface{}) {
 	}
 }
 
-// newDeployment creates a new Deployment for a Foo resource. It also sets
-// the appropriate OwnerReferences on the resource so handleObject can discover
-// the Foo resource that 'owns' it.
-func newDeployment(assert *networkv1alpha1.Assert) *appsv1.Deployment {
-	labels := map[string]string{
-		"app":        "nginx",
-		"controller": assert.Name,
+func (c *Controller) poll(key string) {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		return
 	}
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      assert.Spec.DeploymentName,
-			Namespace: assert.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(assert, schema.GroupVersionKind{
-					Group:   networkv1alpha1.SchemeGroupVersion.Group,
-					Version: networkv1alpha1.SchemeGroupVersion.Version,
-					Kind:    "Assert",
-				}),
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: assert.Spec.Replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "nginx",
-							Image: "nginx:latest",
-						},
-					},
-				},
-			},
-		},
+
+	for {
+		svcAddr := fmt.Sprintf("%s.%s.svc.cluster.local", name, namespace)
+		newHosts, err := net.LookupHost(svcAddr)
+		var newDNSEntry *networkv1alpha1.DNSEntry
+		if err != nil {
+			err := fmt.Sprintf("DNS entry for key '%s', does not exist:\n%v", key, err)
+			newDNSEntry = networkv1alpha1.ErrorServiceDNSEntry(namespace, name, err)
+		} else {
+			newDNSEntry = networkv1alpha1.ServiceDNSEntry(namespace, name, newHosts...)
+		}
+
+		var oldDNSEntry *networkv1alpha1.DNSEntry
+		exists := false
+		equal := false
+		updated := false
+		func() {
+			c.serviceHosts.Lock()
+			defer c.serviceHosts.Unlock()
+			oldDNSEntry, exists = c.serviceHosts.hosts[key]
+			if !exists {
+				return
+			}
+
+			equal = reflect.DeepEqual(oldDNSEntry, newDNSEntry)
+			if !equal || newDNSEntry.Error != nil {
+				c.serviceHosts.hosts[key] = newDNSEntry
+				updated = true
+			}
+		}()
+
+		if !exists {
+			glog.V(4).Infof("Could not poll DNS entries for '%s', does not exist", key)
+			return
+		}
+
+		func() {
+			if updated {
+				c.assertLock.RLock()
+				defer c.assertLock.RUnlock()
+
+				for assertKey := range c.asserts {
+					c.workqueue.AddRateLimited(assertKey)
+				}
+			}
+		}()
+
+		time.Sleep(1 * time.Second)
 	}
 }
