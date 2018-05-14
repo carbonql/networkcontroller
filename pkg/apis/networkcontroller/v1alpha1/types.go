@@ -36,8 +36,18 @@ type DNSAssert struct {
 
 // AssertSpec is the spec for an DNSAssert resource
 type AssertSpec struct {
-	DeploymentName string `json:"deploymentName"`
-	Replicas       *int32 `json:"replicas"`
+	Resolve Resolve `json:"resolve"`
+}
+
+// Resolve is a of DNS entries we need to resolve
+type Resolve struct {
+	Services []ServiceResolveSpec `json:"services"`
+}
+
+// ServiceResolveSpec is a of DNS entries we need to resolve
+type ServiceResolveSpec struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 // AssertStatus is the status for an DNSAssert resource
