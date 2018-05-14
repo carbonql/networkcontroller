@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package network
 
 import (
 	"fmt"
@@ -234,8 +234,10 @@ func (c *Controller) runWorker() {
 // attempt to process it, by calling the syncHandler.
 func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
+	glog.V(3).Infof("Processing work item %v", obj)
 
 	if shutdown {
+		glog.V(3).Infof("Shutting down work queue")
 		return false
 	}
 
@@ -260,6 +262,7 @@ func (c *Controller) processNextWorkItem() bool {
 			// Forget here else we'd go into a loop of attempting to
 			// process a work item that is invalid.
 			c.workqueue.Forget(obj)
+			glog.V(3).Infof("expected string in workqueue but got %#v", obj)
 			runtime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
 		}
@@ -276,6 +279,7 @@ func (c *Controller) processNextWorkItem() bool {
 	}(obj)
 
 	if err != nil {
+		glog.V(3).Infof("%v", err)
 		runtime.HandleError(err)
 		return true
 	}
@@ -287,6 +291,8 @@ func (c *Controller) processNextWorkItem() bool {
 // converge the two. It then updates the Status block of the Foo resource
 // with the current status of the resource.
 func (c *Controller) syncHandler(key string) error {
+	glog.V(3).Infof("UPDATING SYNC HANDLER '%s'", key)
+
 	// Convert the namespace/name string into a distinct namespace and name
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -323,7 +329,16 @@ func (c *Controller) updateDNSAssertStatus(dnsAssert *networkv1alpha1.DNSAssert)
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	dnsAssertCopy := dnsAssert.DeepCopy()
-	// dnsAssertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+
+	services := map[string]networkv1alpha1.ServiceResolveSpec{}
+	for _, service := range dnsAssertCopy.Spec.Resolve.Services {
+		ns := service.Namespace
+		if ns == "" {
+			ns = "default"
+		}
+		services[fmt.Sprintf("%s/%s", ns, service.Name)] = service
+	}
+	glog.V(3).Infof("Services: '%v'", services)
 
 	dnsAssert.Status.DNSEntries = []*networkv1alpha1.DNSEntry{}
 	var err error
@@ -332,8 +347,22 @@ func (c *Controller) updateDNSAssertStatus(dnsAssert *networkv1alpha1.DNSAssert)
 		defer c.serviceHosts.RUnlock()
 
 		for _, dnsEntry := range c.serviceHosts.hosts {
-			entryCopy := dnsEntry.DeepCopy()
-			dnsAssert.Status.DNSEntries = append(dnsAssert.Status.DNSEntries, entryCopy)
+			key := fmt.Sprintf("%s/%s", dnsEntry.Namespace, dnsEntry.Name)
+			glog.V(3).Infof("Processing DNS entry '%s'", key)
+			if _, exists := services[key]; exists {
+				entryCopy := dnsEntry.DeepCopy()
+				glog.V(3).Infof("Entry copy '%v'", entryCopy)
+				dnsAssert.Status.DNSEntries = append(dnsAssert.Status.DNSEntries, entryCopy)
+			}
+			delete(services, key)
+		}
+
+		// Go through the remainder of the keys, add entries.
+		for serviceName, service := range services {
+			glog.V(3).Infof("Marked service '%s' as pending", serviceName)
+			dnsAssert.Status.DNSEntries = append(dnsAssert.Status.DNSEntries,
+				networkv1alpha1.ErrorServiceDNSEntry(service.Namespace, service.Name,
+					"Attempt to resolve has not completed"))
 		}
 	}()
 	if err != nil {
@@ -404,7 +433,7 @@ func (c *Controller) handleObject(obj interface{}) {
 func (c *Controller) poll(key string) {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
+		runtime.HandleError(fmt.Errorf("invalid resource key: '%s'", key))
 		return
 	}
 
@@ -413,10 +442,12 @@ func (c *Controller) poll(key string) {
 		newHosts, err := net.LookupHost(svcAddr)
 		var newDNSEntry *networkv1alpha1.DNSEntry
 		if err != nil {
+			glog.V(3).Infof("Error processing service '%s/%s", namespace, name)
 			err := fmt.Sprintf("DNS entry for key '%s', does not exist:\n%v", key, err)
 			newDNSEntry = networkv1alpha1.ErrorServiceDNSEntry(namespace, name, err)
 		} else {
 			newDNSEntry = networkv1alpha1.ServiceDNSEntry(namespace, name, newHosts...)
+			// glog.V(3).Infof("Processing service '%s/%s %v", namespace, name, newDNSEntry)
 		}
 
 		var oldDNSEntry *networkv1alpha1.DNSEntry
@@ -432,7 +463,8 @@ func (c *Controller) poll(key string) {
 			}
 
 			equal = reflect.DeepEqual(oldDNSEntry, newDNSEntry)
-			if !equal || newDNSEntry.Error != nil {
+			// glog.V(3).Infof("Setting new DNS entry service '%s/%s %v", namespace, name, newDNSEntry, oldDNSEntry)
+			if !equal {
 				c.serviceHosts.hosts[key] = newDNSEntry
 				updated = true
 			}
@@ -443,14 +475,17 @@ func (c *Controller) poll(key string) {
 			return
 		}
 
+		// glog.V(3).Infof("Running update enqueued for service '%s/%s", namespace, name)
 		func() {
 			if updated {
 				c.dnsAssertLock.RLock()
 				defer c.dnsAssertLock.RUnlock()
 
 				for dnsAssertKey := range c.dnsAsserts {
+					glog.V(3).Infof("Update enqueued for DNS assert key '%s", dnsAssertKey)
 					c.workqueue.AddRateLimited(dnsAssertKey)
 				}
+				glog.V(3).Infof("Update enqueued for service '%s/%s", namespace, name)
 			}
 		}()
 

@@ -6,6 +6,6 @@ spec:
   resolve:
     services:
       - name: nginx
-      - name: mariadb
+      - name: mariadb-app
     # deployment:
     #   - name: nginx
