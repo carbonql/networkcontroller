@@ -1,0 +1,11 @@
+apiVersion: networkcontroller.carbonql.com/v1alpha1
+kind: DNSAssert
+metadata:
+  name: test-dns-assert
+spec:
+  resolve:
+    services:
+      - name: nginx
+      - name: mariadb
+    # deployment:
+    #   - name: nginx

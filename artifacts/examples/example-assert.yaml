@@ -1,7 +1,0 @@
-apiVersion: networkcontroller.carbonql.com/v1alpha1
-kind: Assert
-metadata:
-  name: example-foo
-spec:
-  deploymentName: example-foo
-  replicas: 1

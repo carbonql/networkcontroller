@@ -25,8 +25,8 @@ import (
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// Assert is a specification for an Assert resource
-type Assert struct {
+// DNSAssert is a specification for an DNSAssert resource
+type DNSAssert struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -34,13 +34,13 @@ type Assert struct {
 	Status AssertStatus `json:"status"`
 }
 
-// AssertSpec is the spec for an Assert resource
+// AssertSpec is the spec for an DNSAssert resource
 type AssertSpec struct {
 	DeploymentName string `json:"deploymentName"`
 	Replicas       *int32 `json:"replicas"`
 }
 
-// AssertStatus is the status for an Assert resource
+// AssertStatus is the status for an DNSAssert resource
 type AssertStatus struct {
 	DNSEntries []*DNSEntry `json:"dnsEntries"`
 }
@@ -83,10 +83,10 @@ func ErrorServiceDNSEntry(namespace, name, err string) *DNSEntry {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// AssertList is a list of Assert resources
-type AssertList struct {
+// DNSAssertList is a list of DNSAssert resources
+type DNSAssertList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
 
-	Items []Assert `json:"items"`
+	Items []DNSAssert `json:"items"`
 }

@@ -58,10 +58,10 @@ const (
 
 	// MessageResourceExists is the message used for Events when a resource
 	// fails to sync due to a Deployment already existing
-	MessageResourceExists = "Resource %q already exists and is not managed by Assert"
+	MessageResourceExists = "Resource %q already exists and is not managed by DNSAssert"
 	// MessageResourceSynced is the message used for an Event fired when a Foo
 	// is synced successfully
-	MessageResourceSynced = "Assert synced successfully"
+	MessageResourceSynced = "DNSAssert synced successfully"
 )
 
 // Controller is the controller implementation for Foo resources
@@ -73,13 +73,13 @@ type Controller struct {
 
 	deploymentsLister appslisters.DeploymentLister
 	deploymentsSynced cache.InformerSynced
-	assertsLister     listers.AssertLister
-	assertsSynced     cache.InformerSynced
+	dnsAssertsLister  listers.DNSAssertLister
+	dnsAssertsSynced  cache.InformerSynced
 	servicesLister    corelisters.ServiceLister
 	servicesSynced    cache.InformerSynced
 
-	assertLock sync.RWMutex
-	asserts    map[string]bool
+	dnsAssertLock sync.RWMutex
+	dnsAsserts    map[string]bool
 
 	serviceHosts serviceSet
 
@@ -104,7 +104,7 @@ func NewController(
 	// obtain references to shared index informers for the Deployment and Foo
 	// types.
 	deploymentInformer := kubeInformerFactory.Apps().V1().Deployments()
-	assertInformer := networkInformerFactory.Networkcontroller().V1alpha1().Asserts()
+	dnsAssertInformer := networkInformerFactory.Networkcontroller().V1alpha1().DNSAsserts()
 	serviceInformer := kubeInformerFactory.Core().V1().Services()
 
 	// Create event broadcaster
@@ -122,44 +122,44 @@ func NewController(
 		networkclientset:  networkclientset,
 		deploymentsLister: deploymentInformer.Lister(),
 		deploymentsSynced: deploymentInformer.Informer().HasSynced,
-		assertsLister:     assertInformer.Lister(),
-		assertsSynced:     assertInformer.Informer().HasSynced,
+		dnsAssertsLister:  dnsAssertInformer.Lister(),
+		dnsAssertsSynced:  dnsAssertInformer.Informer().HasSynced,
 		servicesLister:    serviceInformer.Lister(),
 		servicesSynced:    serviceInformer.Informer().HasSynced,
-		assertLock:        sync.RWMutex{},
-		asserts:           map[string]bool{},
+		dnsAssertLock:     sync.RWMutex{},
+		dnsAsserts:        map[string]bool{},
 		serviceHosts: serviceSet{
 			hosts: map[string]*networkv1alpha1.DNSEntry{},
 		},
-		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Asserts"),
+		workqueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "DNSAsserts"),
 		recorder:  recorder,
 	}
 
 	glog.Info("Setting up event handlers")
 	// Set up an event handler for when Foo resources change
-	assertInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	dnsAssertInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			controller.enqueueAssert(obj)
+			controller.enqueueDNSAssert(obj)
 			key := makeKey(obj)
 
-			controller.assertLock.Lock()
-			defer controller.assertLock.Unlock()
+			controller.dnsAssertLock.Lock()
+			defer controller.dnsAssertLock.Unlock()
 
-			if _, exists := controller.asserts[key]; !exists {
-				controller.asserts[key] = true
+			if _, exists := controller.dnsAsserts[key]; !exists {
+				controller.dnsAsserts[key] = true
 			}
-			controller.asserts[key] = true
+			controller.dnsAsserts[key] = true
 		},
 		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueAssert(new)
+			controller.enqueueDNSAssert(new)
 		},
 		DeleteFunc: func(obj interface{}) {
 			key := makeKey(obj)
 
-			controller.assertLock.Lock()
-			defer controller.assertLock.Unlock()
+			controller.dnsAssertLock.Lock()
+			defer controller.dnsAssertLock.Unlock()
 
-			delete(controller.asserts, key)
+			delete(controller.dnsAsserts, key)
 		},
 	})
 	// Set up an event handler for when Deployment resources change. This
@@ -201,11 +201,11 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	glog.Info("Starting Assert controller")
+	glog.Info("Starting DNSAssert controller")
 
 	// Wait for the caches to be synced before starting workers
 	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.assertsSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.deploymentsSynced, c.dnsAssertsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -295,12 +295,12 @@ func (c *Controller) syncHandler(key string) error {
 	}
 
 	// Get the Foo resource with this namespace/name
-	assert, err := c.assertsLister.Asserts(namespace).Get(name)
+	dnsAssert, err := c.dnsAssertsLister.DNSAsserts(namespace).Get(name)
 	if err != nil {
 		// The Foo resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
-			runtime.HandleError(fmt.Errorf("assert '%s' in work queue no longer exists", key))
+			runtime.HandleError(fmt.Errorf("dnsAssert '%s' in work queue no longer exists", key))
 			return nil
 		}
 
@@ -309,23 +309,23 @@ func (c *Controller) syncHandler(key string) error {
 
 	// Finally, we update the status block of the Foo resource to reflect the
 	// current state of the world
-	err = c.updateAssertStatus(assert /*, deployment*/)
+	err = c.updateDNSAssertStatus(dnsAssert /*, deployment*/)
 	if err != nil {
 		return err
 	}
 
-	c.recorder.Event(assert, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	c.recorder.Event(dnsAssert, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 	return nil
 }
 
-func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert) error {
+func (c *Controller) updateDNSAssertStatus(dnsAssert *networkv1alpha1.DNSAssert) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
-	assertCopy := assert.DeepCopy()
-	// assertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+	dnsAssertCopy := dnsAssert.DeepCopy()
+	// dnsAssertCopy.Status.AvailableReplicas = deployment.Status.AvailableReplicas
 
-	assert.Status.DNSEntries = []*networkv1alpha1.DNSEntry{}
+	dnsAssert.Status.DNSEntries = []*networkv1alpha1.DNSEntry{}
 	var err error
 	func() {
 		c.serviceHosts.RLock()
@@ -333,7 +333,7 @@ func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert) error {
 
 		for _, dnsEntry := range c.serviceHosts.hosts {
 			entryCopy := dnsEntry.DeepCopy()
-			assert.Status.DNSEntries = append(assert.Status.DNSEntries, entryCopy)
+			dnsAssert.Status.DNSEntries = append(dnsAssert.Status.DNSEntries, entryCopy)
 		}
 	}()
 	if err != nil {
@@ -344,14 +344,14 @@ func (c *Controller) updateAssertStatus(assert *networkv1alpha1.Assert) error {
 	// we must use Update instead of UpdateStatus to update the Status block of the Foo resource.
 	// UpdateStatus will not allow changes to the Spec of the resource,
 	// which is ideal for ensuring nothing other than resource status has been updated.
-	_, err = c.networkclientset.NetworkcontrollerV1alpha1().Asserts(assert.Namespace).Update(assertCopy)
+	_, err = c.networkclientset.NetworkcontrollerV1alpha1().DNSAsserts(dnsAssert.Namespace).Update(dnsAssertCopy)
 	return err
 }
 
 // enqueueFoo takes a Foo resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than Foo.
-func (c *Controller) enqueueAssert(obj interface{}) {
+func (c *Controller) enqueueDNSAssert(obj interface{}) {
 	var key string
 	var err error
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
@@ -386,17 +386,17 @@ func (c *Controller) handleObject(obj interface{}) {
 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
 		// If this object is not owned by a Foo, we should not do anything more
 		// with it.
-		if ownerRef.Kind != "Assert" {
+		if ownerRef.Kind != "DNSAssert" {
 			return
 		}
 
-		assert, err := c.assertsLister.Asserts(object.GetNamespace()).Get(ownerRef.Name)
+		dnsAssert, err := c.dnsAssertsLister.DNSAsserts(object.GetNamespace()).Get(ownerRef.Name)
 		if err != nil {
-			glog.V(4).Infof("ignoring orphaned object '%s' of assert '%s'", object.GetSelfLink(), ownerRef.Name)
+			glog.V(4).Infof("ignoring orphaned object '%s' of dnsAssert '%s'", object.GetSelfLink(), ownerRef.Name)
 			return
 		}
 
-		c.enqueueAssert(assert)
+		c.enqueueDNSAssert(dnsAssert)
 		return
 	}
 }
@@ -445,11 +445,11 @@ func (c *Controller) poll(key string) {
 
 		func() {
 			if updated {
-				c.assertLock.RLock()
-				defer c.assertLock.RUnlock()
+				c.dnsAssertLock.RLock()
+				defer c.dnsAssertLock.RUnlock()
 
-				for assertKey := range c.asserts {
-					c.workqueue.AddRateLimited(assertKey)
+				for dnsAssertKey := range c.dnsAsserts {
+					c.workqueue.AddRateLimited(dnsAssertKey)
 				}
 			}
 		}()

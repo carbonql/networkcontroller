@@ -31,59 +31,59 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// AssertInformer provides access to a shared informer and lister for
-// Asserts.
-type AssertInformer interface {
+// DNSAssertInformer provides access to a shared informer and lister for
+// DNSAsserts.
+type DNSAssertInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.AssertLister
+	Lister() v1alpha1.DNSAssertLister
 }
 
-type assertInformer struct {
+type dNSAssertInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 	namespace        string
 }
 
-// NewAssertInformer constructs a new informer for Assert type.
+// NewDNSAssertInformer constructs a new informer for DNSAssert type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredAssertInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewDNSAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredDNSAssertInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredAssertInformer constructs a new informer for Assert type.
+// NewFilteredDNSAssertInformer constructs a new informer for DNSAssert type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredDNSAssertInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkcontrollerV1alpha1().Asserts(namespace).List(options)
+				return client.NetworkcontrollerV1alpha1().DNSAsserts(namespace).List(options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkcontrollerV1alpha1().Asserts(namespace).Watch(options)
+				return client.NetworkcontrollerV1alpha1().DNSAsserts(namespace).Watch(options)
 			},
 		},
-		&networkcontroller_v1alpha1.Assert{},
+		&networkcontroller_v1alpha1.DNSAssert{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *assertInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredAssertInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *dNSAssertInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredDNSAssertInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *assertInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&networkcontroller_v1alpha1.Assert{}, f.defaultInformer)
+func (f *dNSAssertInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&networkcontroller_v1alpha1.DNSAssert{}, f.defaultInformer)
 }
 
-func (f *assertInformer) Lister() v1alpha1.AssertLister {
-	return v1alpha1.NewAssertLister(f.Informer().GetIndexer())
+func (f *dNSAssertInformer) Lister() v1alpha1.DNSAssertLister {
+	return v1alpha1.NewDNSAssertLister(f.Informer().GetIndexer())
 }

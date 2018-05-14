@@ -28,8 +28,8 @@ type FakeNetworkcontrollerV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeNetworkcontrollerV1alpha1) Asserts(namespace string) v1alpha1.AssertInterface {
-	return &FakeAsserts{c, namespace}
+func (c *FakeNetworkcontrollerV1alpha1) DNSAsserts(namespace string) v1alpha1.DNSAssertInterface {
+	return &FakeDNSAsserts{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate

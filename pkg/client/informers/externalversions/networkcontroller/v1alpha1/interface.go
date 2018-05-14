@@ -24,8 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// Asserts returns a AssertInformer.
-	Asserts() AssertInformer
+	// DNSAsserts returns a DNSAssertInformer.
+	DNSAsserts() DNSAssertInformer
 }
 
 type version struct {
@@ -39,7 +39,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// Asserts returns a AssertInformer.
-func (v *version) Asserts() AssertInformer {
-	return &assertInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+// DNSAsserts returns a DNSAssertInformer.
+func (v *version) DNSAsserts() DNSAssertInformer {
+	return &dNSAssertInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

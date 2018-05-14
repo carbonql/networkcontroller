@@ -18,10 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
-// AssertListerExpansion allows custom methods to be added to
-// AssertLister.
-type AssertListerExpansion interface{}
+// DNSAssertListerExpansion allows custom methods to be added to
+// DNSAssertLister.
+type DNSAssertListerExpansion interface{}
 
-// AssertNamespaceListerExpansion allows custom methods to be added to
-// AssertNamespaceLister.
-type AssertNamespaceListerExpansion interface{}
+// DNSAssertNamespaceListerExpansion allows custom methods to be added to
+// DNSAssertNamespaceLister.
+type DNSAssertNamespaceListerExpansion interface{}

@@ -27,7 +27,7 @@ import (
 
 type NetworkcontrollerV1alpha1Interface interface {
 	RESTClient() rest.Interface
-	AssertsGetter
+	DNSAssertsGetter
 }
 
 // NetworkcontrollerV1alpha1Client is used to interact with features provided by the networkcontroller.carbonql.com group.
@@ -35,8 +35,8 @@ type NetworkcontrollerV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *NetworkcontrollerV1alpha1Client) Asserts(namespace string) AssertInterface {
-	return newAsserts(c, namespace)
+func (c *NetworkcontrollerV1alpha1Client) DNSAsserts(namespace string) DNSAssertInterface {
+	return newDNSAsserts(c, namespace)
 }
 
 // NewForConfig creates a new NetworkcontrollerV1alpha1Client for the given config.
